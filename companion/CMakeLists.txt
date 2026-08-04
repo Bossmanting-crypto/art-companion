@@ -15,7 +15,7 @@ add_executable(ArtCompanion WIN32
     AnimationController.cpp
 )
 
-target_include_directories(ArtCompanion PRIVATE src)
+
 
 # gdiplus: per-pixel alpha sprite rendering
 # user32/gdi32: window + layered window + hooks
