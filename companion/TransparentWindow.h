@@ -1,7 +1,9 @@
 #pragma once
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <objidl.h>
+#include <objidl.h>   // must come before gdiplus.h -- WIN32_LEAN_AND_MEAN strips
+                       // the OLE headers that declare IStream/PROPID, which
+                       // GDI+'s own headers assume are already available.
 #include <gdiplus.h>
 #include <memory>
 #include "ToolMap.h"
