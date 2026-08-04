@@ -1,9 +1,8 @@
 #pragma once
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <objidl.h>
 #include <gdiplus.h>
-#include <memory>
-#include "ToolMap.h"
 
 // Owns the borderless, layered, click-through companion window and
 // handles compositing the current animation frame with UpdateLayeredWindow.
