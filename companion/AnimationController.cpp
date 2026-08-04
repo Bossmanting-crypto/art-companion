@@ -31,7 +31,7 @@ bool AnimationController::LoadGifFrames(const std::wstring& path, std::vector<Fr
     if (dimCount == 0) return false;
 
     std::vector<GUID> dims(dimCount);
-    gif.GetFrameDimensionList(dims.data(), dimCount);
+    gif.GetFrameDimensionsList(dims.data(), dimCount);
 
     UINT frameCount = gif.GetFrameCount(&dims[0]);
     if (frameCount == 0) return false;
