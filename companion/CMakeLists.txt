@@ -9,10 +9,10 @@ if(NOT WIN32)
 endif()
 
 add_executable(ArtCompanion WIN32
-    src/main.cpp
-    src/TransparentWindow.cpp
-    src/InputWatcher.cpp
-    src/AnimationController.cpp
+    main.cpp
+    TransparentWindow.cpp
+    InputWatcher.cpp
+    AnimationController.cpp
 )
 
 target_include_directories(ArtCompanion PRIVATE src)
