@@ -41,6 +41,15 @@ LRESULT CALLBACK TransparentWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, 
             }
             return 0;
 
+        case TransparentWindow::kShowContextMenuMsg: {
+            if (!instance_) return 0;
+            POINT pt{ static_cast<LONG>(wParam), static_cast<LONG>(lParam) };
+            instance_->SetClickThrough(false);
+            instance_->ShowContextMenu(pt);
+            instance_->SetClickThrough(true);
+            return 0;
+        }
+
         case WM_COMMAND: {
             if (!instance_) break;
             switch (LOWORD(wParam)) {
@@ -98,7 +107,6 @@ bool TransparentWindow::Create(HINSTANCE hInstance, int width, int height) {
 
     if (!hwnd_) return false;
 
-    ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
     CreateTrayIcon();
     return true;
 }

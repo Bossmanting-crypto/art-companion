@@ -39,6 +39,14 @@ public:
 
     void ShowContextMenu(POINT screenPt);
 
+    // Posted from InputWatcher's low-level mouse hook when a right-click
+    // lands on the sprite. Handled in WndProc, NOT called directly from the
+    // hook -- TrackPopupMenu blocks pumping its own modal loop, and doing
+    // that inside a global low-level hook callback can make Windows decide
+    // the hook is unresponsive and silently disable it. Posting a message
+    // defers the actual menu display to the window's normal message loop.
+    static constexpr UINT kShowContextMenuMsg = WM_APP + 2;
+
     // Tray icon (Shell_NotifyIcon), doubles as the app's on/off + settings
     // surface without needing a separate settings window.
     bool CreateTrayIcon();

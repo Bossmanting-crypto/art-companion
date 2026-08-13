@@ -69,6 +69,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
     std::wstring exeDir = ExeDir();
     g_anim.LoadAssets(exeDir + L"\\assets", kSpriteSize, kSpriteSize);
 
+    // Stay hidden (tray icon only) until CSP is actually running -- see the
+    // watchdog handler below, which reveals the sprite once CSP is detected
+    // and closes the whole app once CSP is detected as closed. This means
+    // launching ArtCompanion any time (e.g. from Windows' Startup folder)
+    // is safe: it just waits quietly until you open CSP.
+    ShowWindow(g_window.Handle(), SW_HIDE);
+
     // Park the companion in the bottom-right corner of the primary monitor
     // by default.
     int screenW = GetSystemMetrics(SM_CXSCREEN);
@@ -82,11 +89,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
     });
 
     g_input.SetRightClickCallback([](POINT pt) {
-        // Briefly disable click-through so TrackPopupMenu can receive input,
-        // then restore it once the menu closes.
-        g_window.SetClickThrough(false);
-        g_window.ShowContextMenu(pt);
-        g_window.SetClickThrough(true);
+        // Post to the window's own message queue rather than showing the
+        // menu directly here -- this callback runs on the low-level mouse
+        // hook's call stack, and TrackPopupMenu's blocking modal loop can
+        // make Windows silently disable a hook that doesn't return quickly.
+        PostMessage(g_window.Handle(), TransparentWindow::kShowContextMenuMsg,
+            static_cast<WPARAM>(pt.x), static_cast<LPARAM>(pt.y));
     });
 
     // Left-click-drag: same click-through toggle trick, held for the
@@ -130,9 +138,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
             SetTimer(g_window.Handle(), kAnimTimerId, g_anim.CurrentFrameDelayMs(), nullptr);
         } else if (msg.message == WM_TIMER && msg.wParam == kWatchdogTimerId) {
             bool running = IsTargetProcessRunning();
-            if (running) {
+            if (running && !g_everSeenTarget) {
+                // First time we've seen CSP running -- reveal the sprite.
                 g_everSeenTarget = true;
-            } else if (g_everSeenTarget) {
+                ShowWindow(g_window.Handle(), SW_SHOWNOACTIVATE);
+            } else if (!running && g_everSeenTarget) {
                 // CSP was running before and now isn't -- the user closed it.
                 DestroyWindow(g_window.Handle());
             }
