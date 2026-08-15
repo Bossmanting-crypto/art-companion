@@ -81,7 +81,7 @@ bool InputWatcher::IsForegroundTargetProcess() const {
 }
 
 LRESULT CALLBACK InputWatcher::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
-    if (nCode == HC_ACTION && instance_ && wParam == WM_KEYDOWN) {
+    if (nCode == HC_ACTION && instance_ && instance_->enabled_ && wParam == WM_KEYDOWN) {
         auto* kb = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
 
         // Ignore combos (Ctrl/Alt held) -- CSP's single-key tool shortcuts
@@ -101,15 +101,34 @@ LRESULT CALLBACK InputWatcher::LowLevelKeyboardProc(int nCode, WPARAM wParam, LP
 }
 
 LRESULT CALLBACK InputWatcher::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
-    if (nCode == HC_ACTION && instance_ && wParam == WM_RBUTTONDOWN) {
+    if (nCode == HC_ACTION && instance_) {
         auto* ms = reinterpret_cast<MSLLHOOKSTRUCT*>(lParam);
-
-        RECT bounds;
-        GetWindowRect(instance_->companionWnd_, &bounds);
         POINT pt = ms->pt;
 
-        if (PtInRect(&bounds, pt) && instance_->onRightClick_) {
-            instance_->onRightClick_(pt);
+        if (wParam == WM_RBUTTONDOWN) {
+            RECT bounds;
+            GetWindowRect(instance_->companionWnd_, &bounds);
+            if (PtInRect(&bounds, pt) && instance_->onRightClick_) {
+                instance_->onRightClick_(pt);
+            }
+        } else if (wParam == WM_LBUTTONDOWN) {
+            RECT bounds;
+            GetWindowRect(instance_->companionWnd_, &bounds);
+            if (PtInRect(&bounds, pt) && !instance_->dragging_) {
+                instance_->dragging_ = true;
+                instance_->lastDragPoint_ = pt;
+                if (instance_->onDragStart_) instance_->onDragStart_(pt);
+            }
+        } else if (wParam == WM_MOUSEMOVE && instance_->dragging_) {
+            int dx = pt.x - instance_->lastDragPoint_.x;
+            int dy = pt.y - instance_->lastDragPoint_.y;
+            instance_->lastDragPoint_ = pt;
+            if ((dx != 0 || dy != 0) && instance_->onDragMove_) {
+                instance_->onDragMove_(dx, dy);
+            }
+        } else if (wParam == WM_LBUTTONUP && instance_->dragging_) {
+            instance_->dragging_ = false;
+            if (instance_->onDragEnd_) instance_->onDragEnd_();
         }
     }
     return CallNextHookEx(nullptr, nCode, wParam, lParam);

@@ -9,6 +9,8 @@
 //     and reports them as ToolState changes.
 //  2. Detects a right-click landing inside the companion window's bounds so
 //     the caller can temporarily disable click-through and show a menu.
+//  3. Detects a left-click-and-drag landing inside the companion window's
+//     bounds so the caller can reposition the window while held.
 //
 // NOTE: WH_KEYBOARD_LL / WH_MOUSE_LL hooks must be installed from a thread
 // that runs a standard Win32 message loop (GetMessage/DispatchMessage) --
@@ -17,12 +19,23 @@ class InputWatcher {
 public:
     using ToolChangeCallback = std::function<void(ToolState)>;
     using RightClickCallback = std::function<void(POINT)>;
+    using DragStartCallback = std::function<void(POINT)>;
+    using DragMoveCallback = std::function<void(int dx, int dy)>;
+    using DragEndCallback = std::function<void()>;
 
     bool Install(HWND companionWnd);
     void Uninstall();
 
     void SetToolChangeCallback(ToolChangeCallback cb) { onToolChange_ = std::move(cb); }
     void SetRightClickCallback(RightClickCallback cb) { onRightClick_ = std::move(cb); }
+    void SetDragStartCallback(DragStartCallback cb) { onDragStart_ = std::move(cb); }
+    void SetDragMoveCallback(DragMoveCallback cb) { onDragMove_ = std::move(cb); }
+    void SetDragEndCallback(DragEndCallback cb) { onDragEnd_ = std::move(cb); }
+
+    // Pauses/resumes tool-change reactions (used by the tray "Enabled" toggle).
+    // Right-click menu, drag, and the CSP-foreground check keep working either way.
+    void SetEnabled(bool enabled) { enabled_ = enabled; }
+    bool IsEnabled() const { return enabled_; }
 
     // Loads key->tool overrides from toolmap.ini next to the executable.
     // Falls back to DefaultKeyToolMap() for any key not present in the file.
@@ -42,6 +55,13 @@ private:
     std::unordered_map<UINT, ToolState> keyMap_;
     ToolState lastState_ = ToolState::Idle;
 
+    bool dragging_ = false;
+    POINT lastDragPoint_{};
+    bool enabled_ = true;
+
     ToolChangeCallback onToolChange_;
     RightClickCallback onRightClick_;
+    DragStartCallback onDragStart_;
+    DragMoveCallback onDragMove_;
+    DragEndCallback onDragEnd_;
 };
