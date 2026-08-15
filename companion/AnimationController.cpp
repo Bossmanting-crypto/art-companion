@@ -70,6 +70,37 @@ bool AnimationController::LoadGifFrames(const std::wstring& path, std::vector<Fr
     return true;
 }
 
+bool AnimationController::LoadStateFrames(const std::wstring& assetsDir, const std::wstring& name,
+                                           std::vector<FrameData>& outFrames) {
+    std::wstring gifPath = assetsDir + L"\\" + name + L".gif";
+    std::wstring pngDir = assetsDir + L"\\" + name;
+
+    if (fs::exists(gifPath)) {
+        return LoadGifFrames(gifPath, outFrames);
+    }
+
+    if (fs::exists(pngDir) && fs::is_directory(pngDir)) {
+        std::vector<fs::path> pngFiles;
+        for (auto& entry : fs::directory_iterator(pngDir)) {
+            if (entry.path().extension() == L".png") pngFiles.push_back(entry.path());
+        }
+        std::sort(pngFiles.begin(), pngFiles.end());
+
+        for (auto& p : pngFiles) {
+            auto bmp = std::make_unique<Bitmap>(p.wstring().c_str());
+            if (bmp->GetLastStatus() == Ok) {
+                FrameData fd;
+                fd.bitmap = std::move(bmp);
+                fd.delayMs = 100;  // fixed; use a .gif instead if you need real timing
+                outFrames.push_back(std::move(fd));
+            }
+        }
+        return !outFrames.empty();
+    }
+
+    return false;
+}
+
 bool AnimationController::LoadAssets(const std::wstring& assetsDir, int spriteWidth, int spriteHeight) {
     spriteWidth_ = spriteWidth;
     spriteHeight_ = spriteHeight;
@@ -81,35 +112,21 @@ bool AnimationController::LoadAssets(const std::wstring& assetsDir, int spriteWi
 
     for (ToolState state : allStates) {
         std::wstring name = ToolStateName(state);
-        std::wstring gifPath = assetsDir + L"\\" + name + L".gif";
-        std::wstring pngDir = assetsDir + L"\\" + name;
 
         std::vector<FrameData> seq;
-
-        if (fs::exists(gifPath)) {
-            LoadGifFrames(gifPath, seq);
-        } else if (fs::exists(pngDir) && fs::is_directory(pngDir)) {
-            std::vector<fs::path> pngFiles;
-            for (auto& entry : fs::directory_iterator(pngDir)) {
-                if (entry.path().extension() == L".png") pngFiles.push_back(entry.path());
-            }
-            std::sort(pngFiles.begin(), pngFiles.end());
-
-            for (auto& p : pngFiles) {
-                auto bmp = std::make_unique<Bitmap>(p.wstring().c_str());
-                if (bmp->GetLastStatus() == Ok) {
-                    FrameData fd;
-                    fd.bitmap = std::move(bmp);
-                    fd.delayMs = 100;  // fixed; use a .gif instead if you need real timing
-                    seq.push_back(std::move(fd));
-                }
-            }
-        }
-
+        LoadStateFrames(assetsDir, name, seq);
         if (seq.empty()) {
             GeneratePlaceholder(state);
         } else {
             frames_[state] = std::move(seq);
+        }
+
+        // Optional "actively drawing" variant, e.g. Brush_Active.gif. If
+        // missing, activeFrames_ simply has no entry for this state, and
+        // ActiveSequence() falls back to the normal idle frames_ instead.
+        std::vector<FrameData> activeSeq;
+        if (LoadStateFrames(assetsDir, name + L"_Active", activeSeq) && !activeSeq.empty()) {
+            activeFrames_[state] = std::move(activeSeq);
         }
     }
 
@@ -150,20 +167,39 @@ void AnimationController::SetState(ToolState state) {
     frameIndex_ = 0;
 }
 
-void AnimationController::Tick() {
+void AnimationController::SetDrawing(bool drawing) {
+    if (drawing == isDrawing_) return;
+    isDrawing_ = drawing;
+    frameIndex_ = 0;  // start the new sequence (idle or active) from frame 0
+}
+
+const std::vector<AnimationController::FrameData>* AnimationController::ActiveSequence() const {
+    if (isDrawing_) {
+        auto it = activeFrames_.find(currentState_);
+        if (it != activeFrames_.end() && !it->second.empty()) {
+            return &it->second;
+        }
+        // No "_Active" art for this state -- fall through to normal idle frames.
+    }
     auto it = frames_.find(currentState_);
-    if (it == frames_.end() || it->second.empty()) return;
-    frameIndex_ = (frameIndex_ + 1) % it->second.size();
+    if (it == frames_.end() || it->second.empty()) return nullptr;
+    return &it->second;
+}
+
+void AnimationController::Tick() {
+    const auto* seq = ActiveSequence();
+    if (!seq) return;
+    frameIndex_ = (frameIndex_ + 1) % seq->size();
 }
 
 Gdiplus::Bitmap* AnimationController::CurrentFrame() const {
-    auto it = frames_.find(currentState_);
-    if (it == frames_.end() || it->second.empty()) return nullptr;
-    return it->second[frameIndex_ % it->second.size()].bitmap.get();
+    const auto* seq = ActiveSequence();
+    if (!seq) return nullptr;
+    return (*seq)[frameIndex_ % seq->size()].bitmap.get();
 }
 
 UINT AnimationController::CurrentFrameDelayMs() const {
-    auto it = frames_.find(currentState_);
-    if (it == frames_.end() || it->second.empty()) return 100;
-    return it->second[frameIndex_ % it->second.size()].delayMs;
+    const auto* seq = ActiveSequence();
+    if (!seq) return 100;
+    return (*seq)[frameIndex_ % seq->size()].delayMs;
 }

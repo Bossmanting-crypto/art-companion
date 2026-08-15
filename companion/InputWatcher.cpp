@@ -115,9 +115,16 @@ LRESULT CALLBACK InputWatcher::LowLevelMouseProc(int nCode, WPARAM wParam, LPARA
             RECT bounds;
             GetWindowRect(instance_->companionWnd_, &bounds);
             if (PtInRect(&bounds, pt) && !instance_->dragging_) {
+                // Click landed on the sprite itself -- drag-to-reposition.
                 instance_->dragging_ = true;
                 instance_->lastDragPoint_ = pt;
                 if (instance_->onDragStart_) instance_->onDragStart_(pt);
+            } else if (!PtInRect(&bounds, pt) && !instance_->isPainting_
+                       && instance_->IsForegroundTargetProcess()) {
+                // Click landed elsewhere while CSP is the active app --
+                // treat as "starting a brush stroke."
+                instance_->isPainting_ = true;
+                if (instance_->onDrawStart_) instance_->onDrawStart_();
             }
         } else if (wParam == WM_MOUSEMOVE && instance_->dragging_) {
             int dx = pt.x - instance_->lastDragPoint_.x;
@@ -126,9 +133,14 @@ LRESULT CALLBACK InputWatcher::LowLevelMouseProc(int nCode, WPARAM wParam, LPARA
             if ((dx != 0 || dy != 0) && instance_->onDragMove_) {
                 instance_->onDragMove_(dx, dy);
             }
-        } else if (wParam == WM_LBUTTONUP && instance_->dragging_) {
-            instance_->dragging_ = false;
-            if (instance_->onDragEnd_) instance_->onDragEnd_();
+        } else if (wParam == WM_LBUTTONUP) {
+            if (instance_->dragging_) {
+                instance_->dragging_ = false;
+                if (instance_->onDragEnd_) instance_->onDragEnd_();
+            } else if (instance_->isPainting_) {
+                instance_->isPainting_ = false;
+                if (instance_->onDrawEnd_) instance_->onDrawEnd_();
+            }
         }
     }
     return CallNextHookEx(nullptr, nCode, wParam, lParam);

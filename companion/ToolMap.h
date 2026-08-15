@@ -47,7 +47,14 @@ inline const std::unordered_map<UINT, ToolState>& DefaultKeyToolMap() {
     return map;
 }
 
-// The process image name your InputWatcher checks against GetForegroundWindow.
-// Verify this against your actual CSP install (Task Manager > Details tab)
-// since it can vary slightly by version/edition.
+// The process image name checked by InputWatcher's foreground check and by
+// main.cpp's "is CSP open" watchdog. IMPORTANT: CELSYS ships two separate
+// programs -- the "CLIP STUDIO" account/launcher hub, and "CLIP STUDIO
+// PAINT" itself (the actual drawing app). This must point at the Paint
+// app's exe specifically, not the hub, or the companion will react to the
+// launcher being open rather than an actual canvas being open.
+// Verify the exact filename on your machine: open Task Manager while CSP is
+// running, go to the Details tab, find the Paint app's row (its description
+// should mention "CLIP STUDIO PAINT", not just "CLIP STUDIO"), and confirm
+// the "Name" column matches this string exactly.
 inline const wchar_t* kTargetProcessName = L"CLIPStudioPaint.exe";

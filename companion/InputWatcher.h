@@ -11,6 +11,12 @@
 //     the caller can temporarily disable click-through and show a menu.
 //  3. Detects a left-click-and-drag landing inside the companion window's
 //     bounds so the caller can reposition the window while held.
+//  4. Detects a left-click-and-hold landing OUTSIDE the companion window's
+//     bounds while CSP is the foreground app -- treated as "the user is
+//     actively drawing a stroke," distinct from tool selection. This is a
+//     heuristic (we can't see CSP's actual canvas vs toolbar/panel areas
+//     without a real CSP API), but works well in practice since most of
+//     CSP's window is canvas.
 //
 // NOTE: WH_KEYBOARD_LL / WH_MOUSE_LL hooks must be installed from a thread
 // that runs a standard Win32 message loop (GetMessage/DispatchMessage) --
@@ -22,6 +28,8 @@ public:
     using DragStartCallback = std::function<void(POINT)>;
     using DragMoveCallback = std::function<void(int dx, int dy)>;
     using DragEndCallback = std::function<void()>;
+    using DrawStartCallback = std::function<void()>;
+    using DrawEndCallback = std::function<void()>;
 
     bool Install(HWND companionWnd);
     void Uninstall();
@@ -31,6 +39,8 @@ public:
     void SetDragStartCallback(DragStartCallback cb) { onDragStart_ = std::move(cb); }
     void SetDragMoveCallback(DragMoveCallback cb) { onDragMove_ = std::move(cb); }
     void SetDragEndCallback(DragEndCallback cb) { onDragEnd_ = std::move(cb); }
+    void SetDrawStartCallback(DrawStartCallback cb) { onDrawStart_ = std::move(cb); }
+    void SetDrawEndCallback(DrawEndCallback cb) { onDrawEnd_ = std::move(cb); }
 
     // Pauses/resumes tool-change reactions (used by the tray "Enabled" toggle).
     // Right-click menu, drag, and the CSP-foreground check keep working either way.
@@ -57,6 +67,7 @@ private:
 
     bool dragging_ = false;
     POINT lastDragPoint_{};
+    bool isPainting_ = false;
     bool enabled_ = true;
 
     ToolChangeCallback onToolChange_;
@@ -64,4 +75,6 @@ private:
     DragStartCallback onDragStart_;
     DragMoveCallback onDragMove_;
     DragEndCallback onDragEnd_;
+    DrawStartCallback onDrawStart_;
+    DrawEndCallback onDrawEnd_;
 };

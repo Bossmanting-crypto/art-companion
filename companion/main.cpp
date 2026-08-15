@@ -3,8 +3,9 @@
 #include <objidl.h>   // must come before gdiplus.h, see TransparentWindow.h
 #include <gdiplus.h>
 #include <shlwapi.h>
-#include <tlhelp32.h>
+#include <psapi.h>
 #pragma comment(lib, "shlwapi.lib")
+#pragma comment(lib, "psapi.lib")
 
 #include "TransparentWindow.h"
 #include "InputWatcher.h"
@@ -20,12 +21,11 @@ TransparentWindow g_window;
 InputWatcher g_input;
 AnimationController g_anim;
 
-// Tracks whether we've ever seen CSP running yet. Companion is normally
-// launched *together with* CSP (see launch_with_csp.bat), so at startup CSP
-// might take a moment to appear -- we don't want to instantly self-close
-// just because it isn't up in the first tick. Once we've seen it running at
-// least once, disappearing after that means "the user closed CSP" and we
-// close ourselves too.
+// Tracks whether we've ever seen CSP running yet. Companion is meant to be
+// added to Windows' Startup folder and just wait quietly -- at startup CSP
+// might not be open yet, and that's fine, we just stay hidden until it is.
+// Once we've seen it running at least once, disappearing after that means
+// "the user closed CSP" and we close ourselves too.
 bool g_everSeenTarget = false;
 
 std::wstring ExeDir() {
@@ -35,27 +35,49 @@ std::wstring ExeDir() {
     return std::wstring(path);
 }
 
-// Scans all running processes for kTargetProcessName, independent of which
-// window currently has focus (unlike InputWatcher's foreground-only check,
-// which is only meant for "is CSP the active window right now").
-bool IsTargetProcessRunning() {
-    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (snapshot == INVALID_HANDLE_VALUE) return false;
+bool WindowBelongsToTargetProcess(HWND hwnd) {
+    DWORD pid = 0;
+    GetWindowThreadProcessId(hwnd, &pid);
+    if (pid == 0) return false;
 
-    PROCESSENTRY32W entry{};
-    entry.dwSize = sizeof(entry);
+    HANDLE proc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!proc) return false;
 
-    bool found = false;
-    if (Process32FirstW(snapshot, &entry)) {
-        do {
-            if (_wcsicmp(entry.szExeFile, kTargetProcessName) == 0) {
-                found = true;
-                break;
-            }
-        } while (Process32NextW(snapshot, &entry));
+    wchar_t exeName[MAX_PATH]{};
+    DWORD size = MAX_PATH;
+    bool ok = QueryFullProcessImageNameW(proc, 0, exeName, &size);
+    CloseHandle(proc);
+    if (!ok) return false;
+
+    std::wstring path(exeName);
+    auto pos = path.find_last_of(L"\\/");
+    std::wstring fileName = (pos == std::wstring::npos) ? path : path.substr(pos + 1);
+    return _wcsicmp(fileName.c_str(), kTargetProcessName) == 0;
+}
+
+BOOL CALLBACK EnumTargetWindowProc(HWND hwnd, LPARAM lParam) {
+    // Skip invisible/titleless windows -- background helper processes and
+    // CELSYS's separate "CLIP STUDIO" launcher/hub app can have windows or
+    // processes that share naming with the Paint app, but they don't have
+    // a real, visible, titled canvas window the way an open document does.
+    if (!IsWindowVisible(hwnd)) return TRUE;
+    if (GetWindowTextLengthW(hwnd) == 0) return TRUE;
+
+    if (WindowBelongsToTargetProcess(hwnd)) {
+        *reinterpret_cast<bool*>(lParam) = true;
+        return FALSE;  // found it, stop enumerating
     }
+    return TRUE;
+}
 
-    CloseHandle(snapshot);
+// Checks for an actual visible, titled CLIP STUDIO PAINT window -- not just
+// a same-named process existing somewhere. This specifically avoids
+// triggering off CELSYS's separate account/launcher "CLIP STUDIO" hub app,
+// or any idle background helper process, since neither has a real canvas
+// window open.
+bool IsTargetProcessRunning() {
+    bool found = false;
+    EnumWindows(EnumTargetWindowProc, reinterpret_cast<LPARAM>(&found));
     return found;
 }
 }
@@ -109,6 +131,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
     });
     g_input.SetDragEndCallback([]() {
         g_window.SetClickThrough(true);
+    });
+
+    // "Actively drawing" detection: fires when the mouse is pressed
+    // somewhere other than the sprite itself while CSP is the active app
+    // (see InputWatcher's mouse hook for the exact heuristic).
+    g_input.SetDrawStartCallback([]() {
+        g_anim.SetDrawing(true);
+    });
+    g_input.SetDrawEndCallback([]() {
+        g_anim.SetDrawing(false);
     });
 
     // Wire the tray/context-menu "Enabled" checkbox to InputWatcher's gate.
